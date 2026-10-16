@@ -1,0 +1,23 @@
+{
+  "name": "ecosphere-ai",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "modules/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev --workspace=apps/api",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
+    "build": "npm run build --workspace=apps/api && npm run build --workspace=apps/web",
+    "test:api": "npm run test --workspace=apps/api",
+    "test:web": "npm run test --workspace=apps/web",
+    "test:energy": "npm run test --workspace=modules/energy",
+    "test:waste": "npm run test --workspace=modules/waste",
+    "test": "npm run test:api && npm run test:energy && npm run test:waste && npm run test:web"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
