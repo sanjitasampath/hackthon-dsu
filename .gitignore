@@ -34,3 +34,17 @@ yarn-error.log*
 *.sw?
 .vscode/
 .idea/
+
+# Python & Machine Learning
+.venv/
+ml/.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.pt
+*.pth
+*.onnx
+
+# Large Dataset Archives & Raw Dataset (35k images / 3.5GB)
+Merged Waste Classification Dataset (MWCD)/
+

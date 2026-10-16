@@ -1,0 +1,77 @@
+{
+  "dataset_name": "Merged Waste Classification Dataset (MWCD)",
+  "dataset_path": "/Users/Sanjita/campus guide/Merged Waste Classification Dataset (MWCD)/final_merged_dataset",
+  "total_classes": 9,
+  "classes": [
+    "battery",
+    "cardboard",
+    "glass",
+    "metal",
+    "organic",
+    "paper",
+    "plastic",
+    "textile",
+    "trash"
+  ],
+  "class_counts": {
+    "battery": 1727,
+    "cardboard": 3166,
+    "glass": 4678,
+    "metal": 2911,
+    "organic": 2547,
+    "paper": 3496,
+    "plastic": 3897,
+    "textile": 10964,
+    "trash": 1782
+  },
+  "valid_images": 0,
+  "corrupted_images": 0,
+  "sample_images": {
+    "battery": [
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/battery/garbage_12_battery_battery519.jpg",
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/battery/garbage_12_battery_battery257.jpg",
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/battery/garbage_12_battery_battery531.jpg"
+    ],
+    "cardboard": [
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/cardboard/gd_10_cardboard_cardboard_420.jpg",
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/cardboard/trashnet_cardboard_cardboard163.jpg",
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/cardboard/garbage_12_cardboard_cardboard803.jpg"
+    ],
+    "glass": [
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/glass/gd_10_glass_glass_1214.jpg",
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/glass/gd_10_glass_glass_904.jpg",
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/glass/garbage_12_green-glass_green-glass138.jpg"
+    ],
+    "metal": [
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/metal/garbage_12_metal_metal28.jpg",
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/metal/trashnet_metal_metal66.jpg",
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/metal/gd_10_metal_metal_754.jpg"
+    ],
+    "organic": [
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/organic/realwaste_Food Organics_Food Organics_207.jpg",
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/organic/realwaste_Vegetation_Vegetation_428.jpg",
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/organic/garbage_12_biological_biological768.jpg"
+    ],
+    "paper": [
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/paper/realwaste_Paper_Paper_196.jpg",
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/paper/realwaste_Paper_Paper_182.jpg",
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/paper/gd_10_paper_paper_291.jpg"
+    ],
+    "plastic": [
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/plastic/garbage_12_plastic_plastic304.jpg",
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/plastic/garbage_12_plastic_plastic462.jpg",
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/plastic/gd_10_plastic_plastic_238.jpg"
+    ],
+    "textile": [
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/textile/garbage_12_shoes_shoes1370.jpg",
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/textile/gd_10_clothes_clothes_1254.jpg",
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/textile/garbage_12_clothes_clothes3074.jpg"
+    ],
+    "trash": [
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/trash/garbage_12_trash_trash578.jpg",
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/trash/realwaste_Miscellaneous Trash_Miscellaneous Trash_129.jpg",
+      "Merged Waste Classification Dataset (MWCD)/final_merged_dataset/trash/garbage_12_trash_trash222.jpg"
+    ]
+  },
+  "total_images": 35168
+}

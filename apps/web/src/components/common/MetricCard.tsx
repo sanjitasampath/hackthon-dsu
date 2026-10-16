@@ -32,19 +32,24 @@ export const MetricCard: React.FC<Props> = ({
   return (
     <div
       onClick={onClick}
-      className={`bg-navy-900/90 border border-slate-800/80 rounded-xl p-5 shadow-lg shadow-black/20 relative overflow-hidden transition-all duration-200 ${
-        onClick ? 'cursor-pointer hover:border-cyan-500/50 hover:bg-navy-850' : ''
+      className={`glass-card p-5 relative overflow-hidden transition-all duration-300 group ${
+        onClick ? 'cursor-pointer hover:border-cyan-500/50 hover:shadow-glow-cyan' : ''
       }`}
     >
-      <div className="flex items-start justify-between">
+      {/* Ambient background soft glow */}
+      <div className="absolute -top-12 -right-12 w-28 h-28 rounded-full bg-slate-700/10 blur-2xl group-hover:bg-cyan-500/10 transition-colors pointer-events-none" />
+
+      <div className="flex items-start justify-between relative z-10">
         <div className="flex items-center gap-3">
-          <div className={`p-2.5 rounded-lg bg-navy-800/80 border border-slate-700/60 ${iconColor}`}>
+          <div className={`p-2.5 rounded-xl bg-slate-900/90 border border-slate-700/70 shadow-inner group-hover:scale-105 transition-transform ${iconColor}`}>
             <Icon className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">{title}</h3>
+            <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 group-hover:text-slate-300 transition-colors">
+              {title}
+            </h3>
             {badgeText && (
-              <span className={`inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${badgeColor}`}>
+              <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${badgeColor}`}>
                 {badgeText}
               </span>
             )}
@@ -53,12 +58,16 @@ export const MetricCard: React.FC<Props> = ({
         <DataSourceBadge source={dataSource} status={dataStatus} />
       </div>
 
-      <div className="mt-4 flex items-baseline gap-2">
-        <span className="text-3xl font-extrabold text-white tracking-tight">{value}</span>
-        {unit && <span className="text-sm font-semibold text-slate-400">{unit}</span>}
+      <div className="mt-4 flex items-baseline gap-2 relative z-10">
+        <span className="text-3xl font-black text-white tracking-tight">{value}</span>
+        {unit && <span className="text-xs font-semibold text-slate-400">{unit}</span>}
       </div>
 
-      {subtext && <p className="mt-2 text-xs text-slate-400 flex items-center gap-1.5">{subtext}</p>}
+      {subtext && (
+        <p className="mt-2 text-xs text-slate-400/90 flex items-center gap-1.5 leading-snug relative z-10">
+          {subtext}
+        </p>
+      )}
     </div>
   );
 };

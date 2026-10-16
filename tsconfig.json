@@ -10,7 +10,9 @@
     "paths": {
       "@ecosphere/shared": ["./modules/shared/src/index.ts"],
       "@ecosphere/energy": ["./modules/energy/src/index.ts"],
-      "@ecosphere/waste": ["./modules/waste/src/index.ts"]
+      "@ecosphere/waste": ["./modules/waste/src/index.ts"],
+      "@ecosphere/water": ["./modules/water/src/index.ts"],
+      "@ecosphere/resources": ["./modules/resources/src/index.ts"]
     }
   }
 }

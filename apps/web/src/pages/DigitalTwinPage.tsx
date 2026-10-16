@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { CampusIncident, CampusLocation, CampusEvent } from '@ecosphere/shared';
 import { SmartBin } from '@ecosphere/waste';
+import { WaterMeter, WaterTank } from '@ecosphere/water';
+import { Room, SpaceUtilization } from '@ecosphere/resources';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { DataSourceBadge } from '../components/common/DataSourceBadge';
 import { VerificationModal } from '../components/common/VerificationModal';
@@ -12,6 +14,8 @@ import {
   AlertTriangle,
   Zap,
   Trash2,
+  Droplet,
+  Sliders,
   CheckCircle,
   ExternalLink,
   RefreshCw,
@@ -25,6 +29,9 @@ export const DigitalTwinPage: React.FC = () => {
   const [events, setEvents] = useState<CampusEvent[]>([]);
   const [bins, setBins] = useState<SmartBin[]>([]);
   const [energyZones, setEnergyZones] = useState<any[]>([]);
+  const [waterMeters, setWaterMeters] = useState<WaterMeter[]>([]);
+  const [waterTanks, setWaterTanks] = useState<WaterTank[]>([]);
+  const [rooms, setRooms] = useState<(Room & { utilization?: SpaceUtilization })[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>('AUDITORIUM_01');
   const [loading, setLoading] = useState(true);
   const [verifyingIncident, setVerifyingIncident] = useState<CampusIncident | null>(null);
@@ -32,12 +39,15 @@ export const DigitalTwinPage: React.FC = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [locRes, incRes, evtRes, binRes, zoneRes] = await Promise.all([
+      const [locRes, incRes, evtRes, binRes, zoneRes, waterRes, tankRes, roomRes] = await Promise.all([
         api.getLocations(),
         api.getIncidents(),
         api.getEvents({ limit: 100 }),
         api.getWasteBins(),
-        api.getEnergyZones()
+        api.getEnergyZones(),
+        api.getWaterMeters().catch(() => ({ success: false, meters: [] })),
+        api.getWaterTanks().catch(() => ({ success: false, tanks: [] })),
+        api.getResourceRooms().catch(() => ({ success: false, rooms: [] }))
       ]);
 
       setLocations(locRes.locations);
@@ -45,6 +55,9 @@ export const DigitalTwinPage: React.FC = () => {
       setEvents(evtRes.events);
       setBins(binRes.bins);
       setEnergyZones(zoneRes.zones);
+      if (waterRes.success) setWaterMeters(waterRes.meters as any);
+      if (tankRes.success) setWaterTanks(tankRes.tanks as any);
+      if (roomRes.success) setRooms(roomRes.rooms);
     } catch (err) {
       console.error('Failed to load campus twin telemetry:', err);
     } finally {
@@ -63,6 +76,16 @@ export const DigitalTwinPage: React.FC = () => {
   const locationEvents = events.filter(e => e.location_id === selectedLocationId);
   const locationBins = bins.filter(b => b.location_id === selectedLocationId);
   const locationZone = energyZones.find(z => z.locationId === selectedLocationId);
+  const locationWaterMeters = waterMeters.filter(m => m.location_id === selectedLocationId);
+  const locationWaterTanks = waterTanks.filter(t => t.location_id === selectedLocationId);
+  const locationRooms = rooms.filter(r =>
+    r.room_id === selectedLocationId ||
+    (selectedLocationId === 'CLASSROOM_101' && r.room_id === 'CR-101') ||
+    (selectedLocationId === 'CLASSROOM_102' && r.room_id === 'CR-102') ||
+    (selectedLocationId === 'AUDITORIUM_01' && r.room_id === 'LH-101') ||
+    (selectedLocationId === 'LAB_CS_01' && r.room_id === 'CL-301') ||
+    (selectedLocationId === 'LAB_PHY_01' && r.room_id === 'LH-201')
+  );
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
@@ -134,7 +157,7 @@ export const DigitalTwinPage: React.FC = () => {
       {/* Main Grid: SVG Map on Left, Inspection Drawer on Right */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* SVG Canvas Map Card */}
-        <div className="lg:col-span-8 bg-navy-900/90 border border-slate-800 rounded-2xl p-4 shadow-2xl relative overflow-hidden">
+        <div className="lg:col-span-8 glass-panel p-5 relative overflow-hidden">
           {/* Map Legend */}
           <div className="flex flex-wrap items-center justify-between gap-3 pb-3 mb-2 border-b border-slate-800/80 text-xs">
             <div className="flex items-center gap-2 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
@@ -310,7 +333,7 @@ export const DigitalTwinPage: React.FC = () => {
         </div>
 
         {/* Side Panel: Location Inspection Drawer */}
-        <div className="lg:col-span-4 bg-navy-900 border border-slate-800 rounded-2xl p-5 shadow-2xl space-y-5">
+        <div className="lg:col-span-4 glass-card p-6 space-y-5">
           {selectedLocation ? (
             <>
               {/* Header */}
@@ -318,20 +341,20 @@ export const DigitalTwinPage: React.FC = () => {
                 <div>
                   <div className="flex items-center gap-2">
                     <MapPin className="w-4 h-4 text-cyan-400" />
-                    <h2 className="text-base font-extrabold text-white tracking-wide">
+                    <h2 className="text-base font-black text-white tracking-wide">
                       {selectedLocation.name}
                     </h2>
                   </div>
                   <div className="mt-1 flex items-center gap-2">
-                    <span className="font-mono text-xs text-cyan-400 font-semibold">{selectedLocation.location_id}</span>
+                    <span className="font-mono text-xs text-cyan-400 font-bold">{selectedLocation.location_id}</span>
                     <span className="text-xs text-slate-500">•</span>
-                    <span className="text-xs text-slate-400 uppercase font-medium">{selectedLocation.zone_type}</span>
+                    <span className="text-xs text-slate-400 uppercase font-semibold">{selectedLocation.zone_type}</span>
                   </div>
                 </div>
                 <StatusBadge type="severity" value={selectedLocation.activeSeverity || 'healthy'} />
               </div>
 
-              <p className="text-xs text-slate-300 leading-relaxed bg-navy-950/70 p-3 rounded-lg border border-slate-800/80">
+              <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/80 p-3.5 rounded-xl border border-slate-800/80 shadow-inner">
                 {selectedLocation.description}
               </p>
 
@@ -383,9 +406,81 @@ export const DigitalTwinPage: React.FC = () => {
                   </div>
                 )}
 
-                {!locationZone && locationBins.length === 0 && (
+                {/* Water Infrastructure in this Zone */}
+                {(locationWaterMeters.length > 0 || locationWaterTanks.length > 0) && (
+                  <div className="p-3 bg-navy-950 border border-slate-800 rounded-lg text-xs space-y-2">
+                    <div className="flex items-center justify-between text-slate-300">
+                      <span className="flex items-center gap-1 text-cyan-300 font-semibold">
+                        <Droplet className="w-3 h-3" /> Water Infrastructure
+                      </span>
+                    </div>
+
+                    {locationWaterMeters.map(m => (
+                      <div key={m.meter_id} className="p-2 bg-navy-900 rounded border border-slate-800 space-y-1">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-mono text-cyan-400 font-semibold">{m.meter_id}</span>
+                          <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase ${
+                            m.status === 'normal' ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/30' : 'bg-rose-950 text-rose-400 border border-rose-500/30'
+                          }`}>
+                            {m.status.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-[10px] text-slate-400">
+                          <span>Flow: <strong className="text-white">{m.flow_rate_lpm} LPM</strong></span>
+                          <span>Pressure: <strong className="text-white">{m.pressure_psi} psi</strong></span>
+                          <span>Acoustic: <strong className="text-white">{m.leak_acoustic_db} dB</strong></span>
+                        </div>
+                      </div>
+                    ))}
+
+                    {locationWaterTanks.map(t => (
+                      <div key={t.tank_id} className="p-2 bg-navy-900 rounded border border-slate-800 space-y-1">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-semibold text-white truncate">{t.name}</span>
+                          <span className="font-bold text-cyan-400 font-mono">{t.fill_percentage}%</span>
+                        </div>
+                        <div className="w-full h-1.5 bg-navy-950 rounded-full overflow-hidden">
+                          <div className="h-full bg-cyan-500 rounded-full" style={{ width: `${t.fill_percentage}%` }} />
+                        </div>
+                        <span className="text-[10px] text-slate-500 block text-right">
+                          {(t.current_volume_liters / 1000).toFixed(1)}k / {(t.capacity_liters / 1000).toFixed(1)}k Liters
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Space & Timetable Allocation */}
+                {locationRooms.length > 0 && (
+                  <div className="p-3 bg-navy-950 border border-slate-800 rounded-lg text-xs space-y-2">
+                    <div className="flex items-center justify-between text-slate-300">
+                      <span className="flex items-center gap-1 text-indigo-300 font-semibold">
+                        <Sliders className="w-3 h-3" /> Space Utilization
+                      </span>
+                    </div>
+
+                    {locationRooms.map(r => {
+                      const rate = r.utilization?.utilization_rate || 0;
+                      return (
+                        <div key={r.room_id} className="p-2 bg-navy-900 rounded border border-slate-800 space-y-1">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-semibold text-white truncate">{r.name}</span>
+                            <span className="font-bold text-indigo-400">{rate}%</span>
+                          </div>
+                          <div className="flex justify-between text-[10px] text-slate-400">
+                            <span>Capacity: <strong className="text-white">{r.capacity} seats</strong></span>
+                            <span>Attendance: <strong className="text-white">{r.utilization?.actual_attendance || 0}</strong></span>
+                            <span>Unused: <strong className="text-amber-400">{r.utilization?.seat_wastage || 0}</strong></span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {!locationZone && locationBins.length === 0 && locationWaterMeters.length === 0 && locationWaterTanks.length === 0 && locationRooms.length === 0 && (
                   <div className="p-3 bg-navy-950 border border-slate-800/80 rounded-lg text-xs text-slate-500 text-center">
-                    No active energy or waste sensor telemetry mapped to this zone.
+                    No active sensor telemetry mapped to this zone.
                   </div>
                 )}
               </div>

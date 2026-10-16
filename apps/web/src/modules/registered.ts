@@ -2,7 +2,8 @@
 import { registerAppModule, AppModuleDefinition } from './registry';
 import { EnergyPage } from '../pages/EnergyPage';
 import { WastePage } from '../pages/WastePage';
-import { PlaceholderModulePage } from '../pages/PlaceholderModulePage';
+import { WaterPage } from '../pages/WaterPage';
+import { ResourcePage } from '../pages/ResourcePage';
 import { Zap, Trash2, Droplet, Sliders } from 'lucide-react';
 import React from 'react';
 
@@ -33,19 +34,10 @@ export const waterAppModule: AppModuleDefinition = {
   name: 'Water Management',
   route: '/water',
   icon: Droplet,
-  installed: false,
+  installed: true,
   navOrder: 30,
-  component: () => React.createElement(PlaceholderModulePage, {
-    moduleName: 'Water Management',
-    icon: Droplet,
-    plannedFeatures: [
-      'Acoustic water pipe leak detection telemetry',
-      'Smart meter flow rate anomaly identification',
-      'Rainwater harvesting tank fill optimization',
-      'Restroom automated fixture flush conservation'
-    ]
-  }),
-  description: 'Placeholder module (Not installed)'
+  component: WaterPage,
+  description: 'Acoustic leak detection, flow metering, minimum night flow analytics, and rainwater cisterns'
 };
 
 export const resourceOptimizationAppModule: AppModuleDefinition = {
@@ -53,19 +45,10 @@ export const resourceOptimizationAppModule: AppModuleDefinition = {
   name: 'Resource Optimization',
   route: '/resources',
   icon: Sliders,
-  installed: false,
+  installed: true,
   navOrder: 40,
-  component: () => React.createElement(PlaceholderModulePage, {
-    moduleName: 'Resource Optimization',
-    icon: Sliders,
-    plannedFeatures: [
-      'Campus vehicle fleet EV charging scheduling',
-      'HVAC thermal mass storage pre-cooling',
-      'Rooftop solar generation forecasting',
-      'Classroom seat capacity utilization rebalancing'
-    ]
-  }),
-  description: 'Placeholder module (Not installed)'
+  component: ResourcePage,
+  description: 'Classroom capacity rebalancing, timetable optimization, and wing HVAC setback automation'
 };
 
 // Register all modules into the registry

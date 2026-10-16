@@ -151,17 +151,112 @@ export function initDatabase() {
       title TEXT NOT NULL,
       report_json TEXT NOT NULL
     );
+
+    -- Water Module Tables
+    CREATE TABLE IF NOT EXISTS water_meters (
+      meter_id TEXT PRIMARY KEY,
+      location_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      meter_type TEXT NOT NULL,
+      flow_rate_lpm REAL NOT NULL,
+      pressure_psi REAL NOT NULL,
+      daily_consumption_liters REAL NOT NULL,
+      baseline_night_flow_lpm REAL NOT NULL,
+      leak_acoustic_db REAL NOT NULL,
+      status TEXT NOT NULL,
+      data_status TEXT NOT NULL,
+      data_source TEXT NOT NULL,
+      last_updated TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS water_tanks (
+      tank_id TEXT PRIMARY KEY,
+      location_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      capacity_liters REAL NOT NULL,
+      current_volume_liters REAL NOT NULL,
+      fill_percentage INTEGER NOT NULL,
+      inflow_rate_lpm REAL NOT NULL,
+      outflow_rate_lpm REAL NOT NULL,
+      water_quality_index REAL NOT NULL,
+      status TEXT NOT NULL,
+      last_updated TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS water_thresholds (
+      id TEXT PRIMARY KEY DEFAULT 'global',
+      night_flow_leak_multiplier REAL NOT NULL,
+      max_burst_flow_lpm REAL NOT NULL,
+      min_line_pressure_psi REAL NOT NULL,
+      acoustic_leak_threshold_db REAL NOT NULL,
+      tank_low_reserve_percent REAL NOT NULL,
+      tariff_per_1000_liters_usd REAL NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS water_flow_readings (
+      reading_id TEXT PRIMARY KEY,
+      meter_id TEXT NOT NULL,
+      location_id TEXT NOT NULL,
+      timestamp TEXT NOT NULL,
+      flow_rate_lpm REAL NOT NULL,
+      pressure_psi REAL NOT NULL,
+      cumulative_liters REAL NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS campus_rooms (
+      room_id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      building TEXT NOT NULL,
+      floor INTEGER NOT NULL,
+      capacity INTEGER NOT NULL,
+      room_type TEXT NOT NULL,
+      has_projector INTEGER NOT NULL,
+      has_computers INTEGER NOT NULL,
+      base_hvac_kw REAL NOT NULL,
+      lighting_kw REAL NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS room_schedules (
+      id TEXT PRIMARY KEY,
+      room_id TEXT NOT NULL,
+      course_code TEXT NOT NULL,
+      course_title TEXT NOT NULL,
+      day_of_week TEXT NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      duration_hours REAL NOT NULL,
+      enrolled_count INTEGER NOT NULL,
+      actual_attendance INTEGER NOT NULL,
+      hvac_active INTEGER NOT NULL,
+      lighting_active INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      data_provenance TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS resource_recommendations (
+      id TEXT PRIMARY KEY,
+      recommendation_type TEXT NOT NULL,
+      priority TEXT NOT NULL,
+      source_schedule_id TEXT NOT NULL,
+      source_room_id TEXT NOT NULL,
+      target_room_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      current_capacity INTEGER NOT NULL,
+      target_capacity INTEGER NOT NULL,
+      attendees INTEGER NOT NULL,
+      estimated_energy_saved_kwh REAL NOT NULL,
+      estimated_cost_saved_usd REAL NOT NULL,
+      estimated_co2_kg_saved REAL NOT NULL,
+      status TEXT NOT NULL
+    );
   `);
 
   seedInitialDataIfEmpty();
 }
 
 export function seedInitialDataIfEmpty(forceReset: boolean = false) {
-  const eventsCount = db.prepare('SELECT COUNT(*) as c FROM campus_events').get() as { c: number };
-  if (eventsCount.c > 0 && !forceReset) {
-    return;
-  }
-
   if (forceReset) {
     db.exec(`
       DELETE FROM campus_events;
@@ -172,7 +267,25 @@ export function seedInitialDataIfEmpty(forceReset: boolean = false) {
       DELETE FROM collection_tasks;
       DELETE FROM waste_classifications;
       DELETE FROM sustainability_reports;
+      DELETE FROM water_meters;
+      DELETE FROM water_tanks;
+      DELETE FROM water_thresholds;
+      DELETE FROM water_flow_readings;
+      DELETE FROM campus_rooms;
+      DELETE FROM room_schedules;
+      DELETE FROM resource_recommendations;
     `);
+  }
+
+  const eventsCount = db.prepare('SELECT COUNT(*) as c FROM campus_events').get() as { c: number };
+  const waterMetersCount = db.prepare('SELECT COUNT(*) as c FROM water_meters').get() as { c: number };
+  const roomsCount = db.prepare('SELECT COUNT(*) as c FROM campus_rooms').get() as { c: number };
+  const needsCoreSeed = eventsCount.c === 0 || forceReset;
+  const needsWaterSeed = waterMetersCount.c === 0 || forceReset;
+  const needsResourceSeed = roomsCount.c === 0 || forceReset;
+
+  if (!needsCoreSeed && !needsWaterSeed && !needsResourceSeed) {
+    return;
   }
 
   const now = new Date().toISOString();
@@ -613,4 +726,211 @@ export function seedInitialDataIfEmpty(forceReset: boolean = false) {
     'Deposit in GREY General Landfill Waste. Low confidence flagged for review.',
     'https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?w=300'
   );
+
+  // 7. Seed Water Module
+  if (needsWaterSeed) {
+    const insertWaterThresholds = db.prepare(`
+      INSERT OR REPLACE INTO water_thresholds (
+        id, night_flow_leak_multiplier, max_burst_flow_lpm, min_line_pressure_psi,
+        acoustic_leak_threshold_db, tank_low_reserve_percent, tariff_per_1000_liters_usd
+      ) VALUES ('global', 2.2, 90.0, 32.0, 52.0, 25.0, 1.85)
+    `);
+    insertWaterThresholds.run();
+
+    // 8. Seed Water Meters
+    const insertWaterMeter = db.prepare(`
+      INSERT OR REPLACE INTO water_meters (
+        meter_id, location_id, name, meter_type, flow_rate_lpm, pressure_psi,
+        daily_consumption_liters, baseline_night_flow_lpm, leak_acoustic_db,
+        status, data_status, data_source, last_updated
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    insertWaterMeter.run('WM_CANTEEN_01', 'CANTEEN_01', 'Dining Hall & Kitchen Main Feed', 'main_feed', 24.5, 52.0, 8420, 1.5, 28.0, 'normal', 'valid', 'simulated', now);
+    insertWaterMeter.run('WM_HOSTEL_01', 'HOSTEL_01', 'Hostel Block A Main Riser', 'main_feed', 38.0, 50.5, 14250, 3.2, 31.0, 'normal', 'valid', 'simulated', now);
+    insertWaterMeter.run('WM_ACAD_01', 'ACADEMIC_BLOCK_01', 'Academic Block 01 Central Sub-meter', 'sub_feed', 12.0, 54.0, 4120, 0.8, 29.5, 'normal', 'valid', 'simulated', now);
+    insertWaterMeter.run('WM_SPORTS_01', 'SPORTS_01', 'Sports Complex & Aquatic Center Supply', 'sub_feed', 18.2, 42.0, 6850, 1.0, 58.5, 'leak_suspected', 'valid', 'simulated', now);
+    insertWaterMeter.run('WM_RESTROOM_C101', 'CLASSROOM_101', 'Classroom 101 Lecture Wing Restroom Line', 'restroom', 9.4, 51.0, 3200, 0.4, 34.0, 'abnormal_flow', 'valid', 'simulated', now);
+    insertWaterMeter.run('WM_LAB_PHY_01', 'LAB_PHY_01', 'Physics Cryogenic & Chiller Return', 'cooling_tower', 16.0, 58.0, 5800, 12.0, 27.0, 'normal', 'valid', 'simulated', now);
+    insertWaterMeter.run('WM_IRRIG_01', 'AUDITORIUM_01', 'Main Auditorium & Quad Lawn Irrigation', 'irrigation', 0.0, 55.0, 1800, 0.0, 22.0, 'normal', 'valid', 'simulated', now);
+
+    // 9. Seed Water Tanks
+    const insertWaterTank = db.prepare(`
+      INSERT OR REPLACE INTO water_tanks (
+        tank_id, location_id, name, type, capacity_liters, current_volume_liters,
+        fill_percentage, inflow_rate_lpm, outflow_rate_lpm, water_quality_index,
+        status, last_updated
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    insertWaterTank.run('TANK_OVERHEAD_ACAD', 'ACADEMIC_BLOCK_01', 'Academic Block Overhead Tank', 'overhead_potable', 40000, 31200, 78, 45, 12, 95, 'optimal', now);
+    insertWaterTank.run('TANK_RAINWATER_CENTRAL', 'LIBRARY_01', 'Central Rainwater Harvesting Cistern', 'rainwater_harvesting', 100000, 82500, 82, 0, 8, 92, 'optimal', now);
+    insertWaterTank.run('TANK_HOSTEL_SUMP', 'HOSTEL_01', 'Hostel Ground Sump', 'ground_sump', 60000, 28500, 47, 50, 38, 94, 'optimal', now);
+    insertWaterTank.run('TANK_CANTEEN_RECYCLED', 'CANTEEN_01', 'Canteen Greywater Reclamation Tank', 'recycled_greywater', 25000, 4500, 18, 15, 20, 81, 'low_reserve', now);
+
+    // 10. Seed Water Historical Time-Series Readings (last 12 hours)
+    const insertFlowReading = db.prepare(`
+      INSERT OR REPLACE INTO water_flow_readings (
+        reading_id, meter_id, location_id, timestamp, flow_rate_lpm, pressure_psi, cumulative_liters
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    for (let i = 12; i >= 0; i--) {
+      const ts = new Date(Date.now() - i * 60 * 60 * 1000).toISOString();
+      insertFlowReading.run(`rd_canteen_${i}`, 'WM_CANTEEN_01', 'CANTEEN_01', ts, Number((20 + Math.sin(i) * 5).toFixed(1)), 52.0, 8420 - i * 500);
+      insertFlowReading.run(`rd_hostel_${i}`, 'WM_HOSTEL_01', 'HOSTEL_01', ts, Number((35 + Math.cos(i) * 8).toFixed(1)), 50.5, 14250 - i * 800);
+      insertFlowReading.run(`rd_acad_${i}`, 'WM_ACAD_01', 'ACADEMIC_BLOCK_01', ts, Number((11 + Math.sin(i * 0.5) * 3).toFixed(1)), 54.0, 4120 - i * 250);
+      insertFlowReading.run(`rd_sports_${i}`, 'WM_SPORTS_01', 'SPORTS_01', ts, 18.2, 42.0, 6850 - i * 400);
+      insertFlowReading.run(`rd_restroom_${i}`, 'WM_RESTROOM_C101', 'CLASSROOM_101', ts, 9.4, 51.0, 3200 - i * 200);
+    }
+
+    // 11. Seed Initial Water Incidents & Events
+    const insertWaterEvent = db.prepare(`
+      INSERT OR REPLACE INTO campus_events (
+        event_id, module, location_id, zone_type, asset_id, issue_type,
+        current_value, unit, severity, timestamp, data_status, data_source,
+        recommended_action, verification_status, details
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    insertWaterEvent.run(
+      'evt_wat_sports_01',
+      'water',
+      'SPORTS_01',
+      'recreational',
+      'WM_SPORTS_01',
+      'pipe_acoustic_pinhole_leak',
+      58.5,
+      'dB',
+      'warning',
+      new Date(Date.now() - 35 * 60 * 1000).toISOString(),
+      'valid',
+      'simulated',
+      'Schedule ultrasonic acoustic survey to pinpoint sub-slab fissure along sports complex perimeter feed.',
+      'unverified',
+      JSON.stringify({ flow_rate_lpm: 18.2, pressure_psi: 42.0, acoustic_db: 58.5, estimated_loss_lph: 55 })
+    );
+
+    insertWaterEvent.run(
+      'evt_wat_c101_01',
+      'water',
+      'CLASSROOM_101',
+      'classroom',
+      'WM_RESTROOM_C101',
+      'continuous_restroom_flapper_leak',
+      9.4,
+      'L/min',
+      'warning',
+      new Date(Date.now() - 48 * 60 * 1000).toISOString(),
+      'valid',
+      'simulated',
+      'Inspect and overhaul lecture block restroom toilet flapper valve and automatic flush sensor.',
+      'unverified',
+      JSON.stringify({ flow_rate_lpm: 9.4, pressure_psi: 51.0, duration_minutes: 48, estimated_loss_lph: 564 })
+    );
+
+    const insertWaterIncident = db.prepare(`
+      INSERT OR REPLACE INTO campus_incidents (
+        incident_id, module, location_id, asset_id, issue_type, title, description,
+        severity, status, first_seen_timestamp, last_seen_timestamp, event_count,
+        current_value, unit, recommended_action, resolution_notes, verified_by, verified_at,
+        data_source, data_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    insertWaterIncident.run(
+      'inc_water_sports_acoustic',
+      'water',
+      'SPORTS_01',
+      'WM_SPORTS_01',
+      'pipe_acoustic_pinhole_leak',
+      'Sub-slab Acoustic Pipe Leak Detected',
+      'Ultrasonic vibration sensor on Sports Complex supply line registered 58.5 dB (threshold: 52 dB), consistent with a pressurized underground pipe fracture leaking ~55 L/h.',
+      'warning',
+      'open',
+      new Date(Date.now() - 35 * 60 * 1000).toISOString(),
+      new Date().toISOString(),
+      2,
+      58.5,
+      'dB',
+      'Deploy acoustic correlator equipment to pinpoint sub-slab fissure and isolate valve WM_SPORTS_01 if pressure drops further.',
+      null,
+      null,
+      null,
+      'simulated',
+      'valid'
+    );
+
+    insertWaterIncident.run(
+      'inc_water_c101_restroom',
+      'water',
+      'CLASSROOM_101',
+      'WM_RESTROOM_C101',
+      'continuous_restroom_flapper_leak',
+      'Continuous Restroom Flushometer Leak',
+      'Restroom branch flow meter indicates unbroken 9.4 L/min flow for over 48 minutes, indicating toilet cistern seal degradation.',
+      'warning',
+      'in_progress',
+      new Date(Date.now() - 48 * 60 * 1000).toISOString(),
+      new Date().toISOString(),
+      3,
+      9.4,
+      'L/min',
+      'Inspect and replace worn toilet flapper gasket or adjust automatic flush sensor sensitivity.',
+      null,
+      null,
+      null,
+      'simulated',
+      'valid'
+    );
+  }
+
+  // 6. Seed Campus Rooms and Academic Schedules for Resource Optimization
+  if (needsResourceSeed) {
+    const insertRoom = db.prepare(`
+      INSERT OR REPLACE INTO campus_rooms (
+        room_id, name, building, floor, capacity, room_type, has_projector, has_computers, base_hvac_kw, lighting_kw
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const roomsData = [
+      ['LH-101', 'Main Lecture Hall 101', 'Academic Block A', 1, 160, 'lecture_hall', 1, 0, 18.0, 3.0],
+      ['LH-201', 'Science Lecture Hall 201', 'Science & Tech Wing', 2, 120, 'lecture_hall', 1, 0, 14.0, 2.2],
+      ['CR-101', 'Smart Classroom 101', 'Academic Block A', 1, 60, 'classroom', 1, 0, 6.0, 1.0],
+      ['CR-102', 'Smart Classroom 102', 'Academic Block A', 1, 60, 'classroom', 1, 0, 6.0, 1.0],
+      ['SR-201', 'Seminar Room 201', 'Academic Block A', 2, 35, 'seminar', 1, 0, 3.5, 0.6],
+      ['SR-202', 'Seminar Room 202', 'Academic Block A', 2, 35, 'seminar', 1, 0, 3.5, 0.6],
+      ['CL-301', 'Computer Lab 301', 'Science & Tech Wing', 3, 45, 'computer_lab', 1, 1, 9.0, 1.5],
+      ['CL-302', 'AI & Robotics Lab 302', 'Science & Tech Wing', 3, 40, 'computer_lab', 1, 1, 8.5, 1.4]
+    ];
+
+    for (const r of roomsData) {
+      insertRoom.run(...r);
+    }
+
+    const insertSchedule = db.prepare(`
+      INSERT OR REPLACE INTO room_schedules (
+        id, room_id, course_code, course_title, day_of_week, start_time, end_time, duration_hours,
+        enrolled_count, actual_attendance, hvac_active, lighting_active, status, data_provenance
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const schedulesData = [
+      ['sched_mon_lh101_09', 'LH-101', 'ENV101', 'Introduction to Sustainability', 'Monday', '09:00', '11:00', 2, 28, 22, 1, 1, 'scheduled', 'sensor'],
+      ['sched_mon_cr101_09', 'CR-101', 'MATH105', 'Calculus for Engineers', 'Monday', '09:00', '10:30', 1.5, 54, 50, 1, 1, 'scheduled', 'sensor'],
+      ['sched_mon_cl301_10', 'CL-301', 'CS301', 'Distributed Systems Lab', 'Monday', '10:00', '12:00', 2, 42, 38, 1, 1, 'scheduled', 'sensor'],
+      ['sched_mon_lh201_14', 'LH-201', 'PHYS201', 'Thermodynamics & Energy Systems', 'Monday', '14:00', '16:00', 2, 30, 24, 1, 1, 'scheduled', 'sensor'],
+      ['sched_mon_cl302_15', 'CL-302', 'ROB401', 'Advanced Robotics Seminar', 'Monday', '15:30', '17:30', 2, 18, 15, 1, 1, 'scheduled', 'sensor'],
+      ['sched_tue_lh101_10', 'LH-101', 'ECON101', 'Principles of Economics', 'Tuesday', '10:00', '12:00', 2, 150, 142, 1, 1, 'scheduled', 'sensor'],
+      ['sched_tue_sr201_11', 'SR-201', 'PHIL210', 'Environmental Ethics', 'Tuesday', '11:00', '12:30', 1.5, 30, 28, 1, 1, 'scheduled', 'sensor'],
+      ['sched_wed_cr102_13', 'CR-102', 'ENG202', 'Technical Communications', 'Wednesday', '13:00', '15:00', 2, 24, 20, 1, 1, 'scheduled', 'sensor'],
+      ['sched_thu_lh201_09', 'LH-201', 'CHEM101', 'General Chemistry Lecture', 'Thursday', '09:00', '11:00', 2, 115, 108, 1, 1, 'scheduled', 'sensor'],
+      ['sched_fri_sr202_14', 'SR-202', 'URB350', 'Smart City Planning Workshop', 'Friday', '14:00', '16:00', 2, 32, 30, 1, 1, 'scheduled', 'sensor']
+    ];
+
+    for (const s of schedulesData) {
+      insertSchedule.run(...s);
+    }
+  }
 }
+

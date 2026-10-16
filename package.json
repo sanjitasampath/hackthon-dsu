@@ -15,7 +15,9 @@
     "test:web": "npm run test --workspace=apps/web",
     "test:energy": "npm run test --workspace=modules/energy",
     "test:waste": "npm run test --workspace=modules/waste",
-    "test": "npm run test:api && npm run test:energy && npm run test:waste && npm run test:web"
+    "test:water": "npm run test --workspace=modules/water",
+    "test:resources": "npm run test --workspace=modules/resources",
+    "test": "npm run test:api && npm run test:energy && npm run test:waste && npm run test:water && npm run test:resources && npm run test:web"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

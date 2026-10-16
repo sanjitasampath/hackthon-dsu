@@ -2,6 +2,8 @@
 import { CampusEvent, CampusIncident, CampusLocation, SustainabilityReport } from '@ecosphere/shared';
 import { EnergyAuditRecord } from '@ecosphere/energy';
 import { SmartBin, CollectionTask, ClassificationRecord } from '@ecosphere/waste';
+import { WaterMeter, WaterTank, WaterThresholdConfig, WaterDecisionOutput } from '@ecosphere/water';
+import { Room, RoomSchedule, SpaceUtilization, ConsolidationRecommendation, UnusedTimeBlock, ResourceSummaryStats } from '@ecosphere/resources';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -104,6 +106,13 @@ export const api = {
       body: JSON.stringify({ imageBase64, mimeType })
     }),
   getWasteHistory: () => request<{ success: boolean; history: ClassificationRecord[] }>('/api/waste/history'),
+  getWasteModelInfo: () => request<{
+    success: boolean;
+    isTrained: boolean;
+    config: any;
+    metrics: any;
+    dataset: any;
+  }>('/api/waste/model-info'),
   correctWasteClassification: (id: string, correctedCategory: string) =>
     request<{ success: boolean }>((`/api/waste/history/${id}/correct`), {
       method: 'PATCH',
@@ -119,6 +128,56 @@ export const api = {
     request<{ success: boolean; task: CollectionTask }>(`/api/waste/collection-tasks/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(payload)
+    }),
+
+  // Water
+  getWaterMeters: () => request<{ success: boolean; meters: (WaterMeter & { decision: WaterDecisionOutput })[] }>('/api/water/meters'),
+  getWaterTanks: () => request<{ success: boolean; tanks: (WaterTank & { evaluation: any })[] }>('/api/water/tanks'),
+  getWaterThresholds: () => request<{ success: boolean; thresholds: WaterThresholdConfig }>('/api/water/thresholds'),
+  updateWaterThresholds: (thresholds: Partial<WaterThresholdConfig>) =>
+    request<{ success: boolean; thresholds: WaterThresholdConfig }>('/api/water/thresholds', {
+      method: 'PUT',
+      body: JSON.stringify(thresholds)
+    }),
+  getWaterReadings: (meter_id?: string, limit: number = 50) => {
+    const q = meter_id ? `?meter_id=${meter_id}&limit=${limit}` : `?limit=${limit}`;
+    return request<{ success: boolean; readings: any[] }>(`/api/water/readings${q}`);
+  },
+  simulateWaterMeter: (payload: { meter_id: string; flow_rate_lpm?: number; pressure_psi?: number; leak_acoustic_db?: number; data_status?: string }) =>
+    request<{ success: boolean; meter: any; decision: WaterDecisionOutput; incident?: CampusIncident }>('/api/water/simulate', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+  simulateWaterTank: (payload: { tank_id: string; fill_percentage: number; inflow_rate_lpm?: number; outflow_rate_lpm?: number }) =>
+    request<{ success: boolean; tank: any }>('/api/water/simulate-tank', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+  getWaterAnalytics: () => request<{ success: boolean; analytics: any }>('/api/water/analytics'),
+
+  // Resources & Space Optimization
+  getResourceRooms: () => request<{ success: boolean; rooms: (Room & { utilization?: SpaceUtilization })[] }>('/api/resources/rooms'),
+  getResourceSchedules: (day_of_week?: string, room_id?: string) => {
+    const params = new URLSearchParams();
+    if (day_of_week) params.append('day_of_week', day_of_week);
+    if (room_id) params.append('room_id', room_id);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return request<{ success: boolean; schedules: RoomSchedule[] }>(`/api/resources/schedules${qs}`);
+  },
+  getResourceRecommendations: () => request<{ success: boolean; recommendations: ConsolidationRecommendation[] }>('/api/resources/recommendations'),
+  reallocateResource: (payload: { schedule_id: string; target_room_id: string; recommendation_id?: string }) =>
+    request<{ success: boolean; message: string; schedule: RoomSchedule }>('/api/resources/reallocate', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+  getUnusedTimeBlocks: (day_of_week: string = 'Monday') =>
+    request<{ success: boolean; day_of_week: string; unused_blocks: UnusedTimeBlock[] }>(`/api/resources/unused-blocks?day_of_week=${day_of_week}`),
+  getResourceSummary: (day_of_week: string = 'Monday') =>
+    request<{ success: boolean; stats: ResourceSummaryStats }>(`/api/resources/summary?day_of_week=${day_of_week}`),
+  simulateScheduleAttendance: (schedule_id: string, actual_attendance: number) =>
+    request<{ success: boolean; schedule: RoomSchedule }>('/api/resources/simulate-schedule', {
+      method: 'POST',
+      body: JSON.stringify({ schedule_id, actual_attendance })
     }),
 
   // Demo Reset

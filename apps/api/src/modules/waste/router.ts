@@ -12,6 +12,11 @@ import {
 } from '@ecosphere/waste';
 import { db } from '../../db.js';
 import { processEventForIncident } from '../../services/incidentService.js';
+import {
+  isLocalModelAvailable,
+  predictWithLocalModel,
+  getLocalModelInfo
+} from './mlPredictor.js';
 
 export const router = Router();
 
@@ -220,21 +225,54 @@ router.post('/classify', async (req, res) => {
       return res.status(400).json({ success: false, error: 'imageBase64 payload is required for segregation classification.' });
     }
 
+    // Priority 1: Run inference using custom-trained local computer vision model (MWCD)
+    if (isLocalModelAvailable()) {
+      try {
+        const localResult = await predictWithLocalModel(imageBase64);
+        if (localResult.success && localResult.classification) {
+          const cls = localResult.classification;
+          const now = new Date().toISOString();
+
+          // Persist classification in history
+          db.prepare(`
+            INSERT INTO waste_classifications (
+              id, timestamp, predicted_category, confidence, review_required,
+              model_type, disposal_guideline
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            cls.id,
+            now,
+            cls.category,
+            cls.confidence,
+            cls.reviewRequired ? 1 : 0,
+            cls.modelDetails,
+            cls.campusDisposalGuideline
+          );
+
+          return res.json({
+            success: true,
+            modelAvailable: true,
+            classification: cls
+          });
+        }
+      } catch (localErr: any) {
+        console.warn('Local ML inference failed, attempting external fallback:', localErr.message);
+      }
+    }
+
+    const openRouterKey = process.env.OPENROUTER_API_KEY;
     const geminiKey = process.env.GEMINI_API_KEY;
 
-    if (!geminiKey || geminiKey.trim() === '') {
+    if ((!openRouterKey || openRouterKey.trim() === '') && (!geminiKey || geminiKey.trim() === '')) {
       return res.status(200).json({
         success: false,
         modelAvailable: false,
-        error: 'GEMINI_API_KEY is not configured in server environment (.env). In accordance with GLOBAL RULES, predictions are NEVER fabricated, hardcoded, or faked.',
-        setupGuide: 'To enable real-time Gemini Vision waste segregation, obtain an API key from Google AI Studio and configure GEMINI_API_KEY in apps/api/.env.'
+        error: 'Neither custom trained model nor external VISION API key is configured. Train the local model or configure OPENROUTER_API_KEY.',
+        setupGuide: 'To enable real-time Vision waste segregation, train the local model via ml/src/train.py or configure OPENROUTER_API_KEY in apps/api/.env.'
       });
     }
 
-    // Call real Gemini 1.5 Flash Vision
     const cleanBase64 = imageBase64.replace(/^data:image\/[a-z]+;base64,/, '');
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
-
     const prompt = `
 Analyze this waste item image for university campus recycling segregation.
 Identify the material category strictly as one of:
@@ -253,40 +291,91 @@ Return a strictly valid JSON object matching:
 }
 `;
 
-    const apiRes = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: prompt },
-              {
-                inlineData: {
-                  mimeType,
-                  data: cleanBase64
+    let parsed: any = null;
+    let modelDetails = '';
+    let modelTypeStr = '';
+
+    if (openRouterKey && openRouterKey.trim() !== '') {
+      const visionModel = process.env.OPENROUTER_VISION_MODEL || 'nvidia/nemotron-3.5-super-vl:free';
+      const formattedImageUrl = imageBase64.startsWith('data:')
+        ? imageBase64
+        : `data:${mimeType};base64,${cleanBase64}`;
+
+      const orRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openRouterKey.trim()}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: visionModel,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: prompt },
+                { type: 'image_url', image_url: { url: formattedImageUrl } }
+              ]
+            }
+          ]
+        })
+      });
+
+      if (!orRes.ok) {
+        const errText = await orRes.text();
+        throw new Error(`OpenRouter Vision API error HTTP ${orRes.status}: ${errText}`);
+      }
+
+      const orJson = await orRes.json();
+      const rawContent = orJson.choices?.[0]?.message?.content;
+      if (!rawContent) {
+        throw new Error('No classification output from OpenRouter Vision model.');
+      }
+
+      const cleaned = rawContent.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+      parsed = JSON.parse(cleaned);
+      modelDetails = `OpenRouter (${visionModel})`;
+      modelTypeStr = 'openrouter_vision';
+    } else if (geminiKey && geminiKey.trim() !== '') {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
+      const apiRes = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: prompt },
+                {
+                  inlineData: {
+                    mimeType,
+                    data: cleanBase64
+                  }
                 }
-              }
-            ]
-          }
-        ],
-        generationConfig: { responseMimeType: 'application/json' }
-      })
-    });
+              ]
+            }
+          ],
+          generationConfig: { responseMimeType: 'application/json' }
+        })
+      });
 
-    if (!apiRes.ok) {
-      throw new Error(`Gemini Vision API error HTTP ${apiRes.status}`);
+      if (!apiRes.ok) {
+        throw new Error(`Gemini Vision API error HTTP ${apiRes.status}`);
+      }
+
+      const apiJson = await apiRes.json();
+      const resultText = apiJson.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!resultText) {
+        throw new Error('No classification output from Gemini Vision model.');
+      }
+
+      parsed = JSON.parse(resultText);
+      modelDetails = 'Gemini 1.5 Flash Vision';
+      modelTypeStr = 'gemini_vision';
     }
 
-    const apiJson = await apiRes.json();
-    const resultText = apiJson.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!resultText) {
-      throw new Error('No classification output from Gemini Vision model.');
-    }
-
-    const parsed = JSON.parse(resultText);
     const category: WasteCategory = parsed.category || 'other_uncertain';
-    const confidence = Number(parsed.confidence || 0.85);
+    const confidence = Number(parsed.confidence || 0.88);
     const reviewRequired = confidence < 0.65;
     const disposalGuideline = getCampusDisposalRule(category);
 
@@ -305,7 +394,7 @@ Return a strictly valid JSON object matching:
       category,
       confidence,
       reviewRequired ? 1 : 0,
-      'gemini-1.5-flash-vision',
+      modelDetails,
       disposalGuideline
     );
 
@@ -319,8 +408,8 @@ Return a strictly valid JSON object matching:
         reviewRequired,
         campusDisposalGuideline: disposalGuideline,
         itemDescription: parsed.description,
-        modelType: 'gemini_vision',
-        modelDetails: 'Gemini 1.5 Flash Vision'
+        modelType: modelTypeStr,
+        modelDetails
       }
     });
   } catch (error: any) {
@@ -328,6 +417,16 @@ Return a strictly valid JSON object matching:
       success: false,
       error: `Computer vision inference error: ${error.message}`
     });
+  }
+});
+
+// GET /api/waste/model-info: Returns custom model metadata, metrics, and dataset stats
+router.get('/model-info', (req, res) => {
+  try {
+    const info = getLocalModelInfo();
+    res.json({ success: true, ...info });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

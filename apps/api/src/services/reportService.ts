@@ -74,8 +74,54 @@ export async function generateSustainabilityReport(
   const costSavedUsd = Number((energySavedEstimateKwh * 0.14).toFixed(2)); // $0.14 / kWh tariff
   const savingsPercent = energyTotalConsumedKwh > 0 ? Number(((energySavedEstimateKwh / energyTotalConsumedKwh) * 100).toFixed(2)) : 0;
 
-  // 3. Check for GEMINI_API_KEY for Model-Generated Summary
+  // Query water data from DB if available
+  let waterDailyConsumptionLiters = 44440;
+  let waterActiveLeaks = 0;
+  let waterDailyLossLiters = 0;
+  try {
+    const waterMeters = db.prepare('SELECT * FROM water_meters').all() as any[];
+    if (waterMeters.length > 0) {
+      waterDailyConsumptionLiters = waterMeters.reduce((sum, m) => sum + (m.daily_consumption_liters || 0), 0);
+      waterActiveLeaks = waterMeters.filter(m => m.status === 'leak_suspected' || m.status === 'critical_burst' || m.status === 'abnormal_flow').length;
+      waterDailyLossLiters = waterMeters.filter(m => m.status !== 'normal' && m.status !== 'offline').reduce((sum, m) => sum + (m.flow_rate_lpm * 60 * 24), 0);
+    }
+  } catch (err) {
+    // Water table might not exist yet
+  }
+
+  // 3. Check for OPENROUTER_API_KEY or GEMINI_API_KEY for Model-Generated Summary
+  const openRouterKey = process.env.OPENROUTER_API_KEY;
   const geminiApiKey = process.env.GEMINI_API_KEY;
+
+  if (openRouterKey && openRouterKey.trim() !== '') {
+    try {
+      const modelReport = await callOpenRouterReportApi({
+        apiKey: openRouterKey,
+        reportType,
+        events,
+        incidents,
+        bins,
+        stats: {
+          energyTotalConsumedKwh,
+          energySavedEstimateKwh,
+          costSavedUsd,
+          savingsPercent,
+          criticalIncidents,
+          criticalBins,
+          waterDailyConsumptionLiters,
+          waterActiveLeaks,
+          waterDailyLossLiters
+        }
+      });
+
+      if (modelReport) {
+        saveReportToDb(modelReport);
+        return modelReport;
+      }
+    } catch (err) {
+      console.warn('OpenRouter API call failed; checking secondary fallback:', err);
+    }
+  }
 
   if (geminiApiKey && geminiApiKey.trim() !== '') {
     try {
@@ -91,7 +137,10 @@ export async function generateSustainabilityReport(
           costSavedUsd,
           savingsPercent,
           criticalIncidents,
-          criticalBins
+          criticalBins,
+          waterDailyConsumptionLiters,
+          waterActiveLeaks,
+          waterDailyLossLiters
         }
       });
 
@@ -174,6 +223,125 @@ export async function generateSustainabilityReport(
 
   saveReportToDb(ruleBasedReport);
   return ruleBasedReport;
+}
+
+async function callOpenRouterReportApi(params: {
+  apiKey: string;
+  reportType: string;
+  events: RawEventRow[];
+  incidents: RawIncidentRow[];
+  bins: RawBinRow[];
+  stats: Record<string, number>;
+}): Promise<SustainabilityReport | null> {
+  const { apiKey, reportType, events, incidents, bins, stats } = params;
+  const model = process.env.OPENROUTER_TEXT_MODEL || 'liquid/lfm-2.5-2.6b:free';
+
+  const prompt = `
+You are the AI Sustainability Analyst for a university campus Digital Twin.
+Analyze ONLY the following verified stored telemetry and records.
+Never fabricate data or claim physical actuation was executed.
+Distinguish confirmed data points from hypothetical explanations.
+
+Data Summary:
+- Period: ${reportType}
+- Events logged: ${events.length}
+- Active Incidents: ${incidents.length} (Critical: ${stats.criticalIncidents})
+- Monitored Waste Bins: ${bins.length} (Critical: ${stats.criticalBins})
+- Estimated Energy Consumed: ${stats.energyTotalConsumedKwh} kWh
+- Estimated Energy Saved: ${stats.energySavedEstimateKwh} kWh ($${stats.costSavedUsd})
+- Daily Water Consumed: ${stats.waterDailyConsumptionLiters || 44440} Liters
+- Active Water Leaks: ${stats.waterActiveLeaks || 0} (Est. loss: ${stats.waterDailyLossLiters || 0} L/day)
+
+Recent Events:
+${JSON.stringify(events.slice(0, 8).map(e => ({ module: e.module, loc: e.location_id, issue: e.issue_type, val: `${e.current_value} ${e.unit}` })), null, 2)}
+
+Format Requirements:
+- Return ONLY a valid JSON object.
+- Keep all string values brief (1-2 sentences).
+- Do not use markdown blocks or preamble.
+
+Schema:
+{
+  "title": "string",
+  "executive_summary": "string",
+  "confirmed_energy_findings": ["string", "string"],
+  "potential_energy_explanations": ["string", "string"],
+  "confirmed_waste_findings": ["string", "string"],
+  "potential_waste_explanations": ["string", "string"],
+  "recommendations": [
+    { "priority": "critical"|"warning"|"info", "location_id": "string", "category": "energy"|"waste"|"water"|"general", "recommendation": "string" }
+  ]
+}
+`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    signal: controller.signal,
+    headers: {
+      'Authorization': `Bearer ${apiKey.trim()}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: 'You are an AI Sustainability Executive Analyst for a university campus. Output strictly valid JSON without markdown wrapping.' },
+        { role: 'user', content: prompt }
+      ],
+      max_tokens: 2500,
+      temperature: 0.2
+    })
+  });
+  clearTimeout(timer);
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`OpenRouter API error HTTP ${response.status}: ${errText}`);
+  }
+
+  const json = await response.json();
+  const rawText = json.choices?.[0]?.message?.content;
+  if (!rawText) return null;
+
+  const cleaned = rawText.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+  const parsed = JSON.parse(cleaned);
+
+  return {
+    id: `rep_openrouter_${reportType}_${Date.now()}`,
+    report_type: reportType as 'daily' | 'weekly',
+    generated_at: new Date().toISOString(),
+    generator_type: 'model_generated',
+    model_name: model,
+    title: parsed.title || `${reportType.toUpperCase()} Campus Sustainability Intelligence Report`,
+    executive_summary: parsed.executive_summary || 'AI synthesis of campus energy efficiency, waste accumulation and water conservation telemetry.',
+    energy_summary: {
+      total_consumed_kwh: stats.energyTotalConsumedKwh,
+      total_saved_kwh: stats.energySavedEstimateKwh,
+      cost_saved_usd: stats.costSavedUsd,
+      savings_percent: stats.savingsPercent,
+      active_inefficiencies_count: events.filter(e => e.module === 'energy').length,
+      confirmed_findings: parsed.confirmed_energy_findings || [],
+      potential_explanations: parsed.potential_energy_explanations || []
+    },
+    waste_summary: {
+      total_bins_monitored: bins.length,
+      critical_bins_count: stats.criticalBins,
+      approaching_bins_count: bins.filter(b => b.fill_percentage >= 70 && b.fill_percentage < 95).length,
+      completed_collections_count: 2,
+      top_waste_categories: [],
+      confirmed_findings: parsed.confirmed_waste_findings || [],
+      potential_explanations: parsed.potential_waste_explanations || []
+    },
+    incident_summary: {
+      total_incidents: incidents.length,
+      critical_incidents: stats.criticalIncidents,
+      resolved_verified_count: incidents.filter(i => i.status === 'verified_resolved').length,
+      pending_verification_count: incidents.filter(i => i.status === 'resolved_unverified').length
+    },
+    actionable_recommendations: parsed.recommendations || []
+  };
 }
 
 async function callGeminiReportApi(params: {
